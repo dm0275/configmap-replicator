@@ -9,11 +9,27 @@ plugins {
     id("base")
 }
 
+version = "1.0.0"
+
+val operatorName = "configmap-replicator-operator"
+val imageRepository = "dm0275/configmap-replicator-operator"
+
 tasks.register("goBuild") {
     doLast {
         exec {
+            environment("GOOS", "linux")
+            environment("GOARCH", "amd64")
+            environment("CGO_ENABLED", "0")
             mkdir(layout.buildDirectory.get())
-            commandLine("go", "build", "-o", "${layout.buildDirectory.get()}/configmap-replicator-operator", "$projectDir")
+            commandLine("go", "build", "-o", "${layout.buildDirectory.get()}/$operatorName", "$projectDir")
+        }
+    }
+}
+
+tasks.register("dockerBuild") {
+    doLast {
+        exec {
+            commandLine("docker", "build", "-t", "$imageRepository:$version", projectDir)
         }
     }
 }
