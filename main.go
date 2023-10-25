@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -52,18 +53,7 @@ func (c *ConfigMapReplicatorController) Run() error {
 		c.clientset.CoreV1().RESTClient(),
 		"configmaps",
 		"source-namespace", // Change to your source namespace.
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				// Replicate the ConfigMap to target namespaces.
-				// Add your replication logic here.
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				// Handle updates to ConfigMaps.
-			},
-			DeleteFunc: func(obj interface{}) {
-				// Handle ConfigMap deletions if necessary.
-			},
-		},
+		fields.Everything(),
 	)
 
 	// Set up a shared informer and run it in the background.
