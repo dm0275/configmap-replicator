@@ -5,11 +5,17 @@
  * To learn more about Gradle by exploring our Samples at https://docs.gradle.org/8.3/samples
  */
 
-tasks.register("build") {
+plugins {
+    id("base")
+}
+
+tasks.register("goBuild") {
     doLast {
         exec {
-            mkdir("build")
-            commandLine("go", "build", "-o", "build/configmap-replicator-operator", "$projectDir")
+            mkdir(layout.buildDirectory.get())
+            commandLine("go", "build", "-o", "${layout.buildDirectory.get()}/configmap-replicator-operator", "$projectDir")
         }
     }
 }
+
+tasks.getByName("build").dependsOn("goBuild")
