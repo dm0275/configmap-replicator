@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configmap-replicator-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: configmap-replicator-controller
+  template:
+    metadata:
+      labels:
+        app: configmap-replicator-controller
+    spec:
+      containers:
+        - name: configmap-replicator-controller
+          image: dm0275/configmap-replicator-operator:1.0.0
