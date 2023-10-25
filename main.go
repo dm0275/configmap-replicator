@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"log"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -115,30 +116,48 @@ func (c *ConfigMapReplicatorController) RunV2() error {
 	select {}
 }
 
-// Replicate the given ConfigMap to all namespaces
-func (c *ConfigMapReplicatorController) replicateConfigMapAcrossNamespaces(configMap *v1.ConfigMap) {
-	namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		logger.Printf("Error listing namespaces: %v", err)
-		return
+func (c *ConfigMapReplicatorController) replicateEnabled(configMap *v1.ConfigMap) bool {
+	replicationAllowed, ok := configMap.Annotations["replication-allowed"]
+	if !ok {
+		return false
 	}
 
-	for _, ns := range namespaces.Items {
-		// Create a new ConfigMap in each namespace
-		newConfigMap := &v1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      configMap.Name,
-				Namespace: ns.Name,
-			},
-			Data: configMap.Data,
+	replicationAllowedBool, err := strconv.ParseBool(replicationAllowed)
+	if err != nil {
+		return false
+	}
+	
+	return replicationAllowedBool
+}
+
+// Replicate the given ConfigMap to all namespaces
+func (c *ConfigMapReplicatorController) replicateConfigMapAcrossNamespaces(configMap *v1.ConfigMap) {
+	if c.replicateEnabled(configMap) {
+		namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			logger.Printf("Error listing namespaces: %v", err)
+			return
 		}
 
-		_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
-		if err != nil {
-			logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
-		} else {
-			logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+		for _, ns := range namespaces.Items {
+			// Create a new ConfigMap in each namespace
+			newConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      configMap.Name,
+					Namespace: ns.Name,
+				},
+				Data: configMap.Data,
+			}
+
+			_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
+			if err != nil {
+				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			} else {
+				logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+			}
 		}
+	} else {
+		logger.Printf("Replication is not allowed for ConfigMap %s", configMap.Name)
 	}
 }
 
@@ -173,6 +192,8 @@ func (c *ConfigMapReplicatorController) RunV3() error {
 				configMap := oldObj.(*v1.ConfigMap)
 				fmt.Printf("Configmap %s updated", configMap.Name)
 				logger.Printf("Configmap %s updated", configMap.Name)
+				// TODO: Need a real update func
+				c.replicateConfigMapAcrossNamespaces(configMap)
 			},
 			DeleteFunc: func(obj interface{}) {
 				// Handle ConfigMap deletions

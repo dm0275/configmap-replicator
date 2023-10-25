@@ -2,5 +2,25 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: app-config
+  annotations:
+    replication-allowed: "true"
+data:
+  log: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config
+  annotations:
+    replication-allowed: "false"
+data:
+  log: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ui-config
+  annotations:
+    replication-allowed: "unknown"
 data:
   log: "info"
