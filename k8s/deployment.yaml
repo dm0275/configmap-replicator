@@ -12,6 +12,7 @@ spec:
       labels:
         app: configmap-replicator-controller
     spec:
+      serviceAccountName: configmap-replicator-controller-sa
       containers:
         - name: configmap-replicator-controller
           image: dm0275/configmap-replicator-operator:1.0.0

@@ -52,7 +52,7 @@ func (c *ConfigMapReplicatorController) Run() error {
 	configMapListWatcher := cache.NewListWatchFromClient(
 		c.clientset.CoreV1().RESTClient(),
 		"configmaps",
-		"source-namespace", // Change to your source namespace.
+		"default", // Change to your source namespace.
 		fields.Everything(),
 	)
 
