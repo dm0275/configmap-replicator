@@ -18,6 +18,8 @@ import (
 	"time"
 )
 
+var logger = log.Default()
+
 func main() {
 	// Load Kubernetes configuration from the default location or from a kubeconfig file.
 	config, err := rest.InClusterConfig()
@@ -117,7 +119,7 @@ func (c *ConfigMapReplicatorController) RunV2() error {
 func (c *ConfigMapReplicatorController) replicateConfigMapAcrossNamespaces(configMap *v1.ConfigMap) {
 	namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		fmt.Printf("Error listing namespaces: %v", err)
+		logger.Printf("Error listing namespaces: %v", err)
 		return
 	}
 
@@ -133,15 +135,14 @@ func (c *ConfigMapReplicatorController) replicateConfigMapAcrossNamespaces(confi
 
 		_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
 		if err != nil {
-			fmt.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
 		} else {
-			fmt.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+			logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
 		}
 	}
 }
 
 func (c *ConfigMapReplicatorController) RunV3() error {
-	logger := log.Default()
 	resyncPeriod, err := time.ParseDuration("1m")
 	if err != nil {
 		panic(err)
