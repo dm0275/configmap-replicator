@@ -126,7 +126,7 @@ func (c *ConfigMapReplicatorController) replicateEnabled(configMap *v1.ConfigMap
 	if err != nil {
 		return false
 	}
-	
+
 	return replicationAllowedBool
 }
 
@@ -161,6 +161,65 @@ func (c *ConfigMapReplicatorController) replicateConfigMapAcrossNamespaces(confi
 	}
 }
 
+func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(configMap *v1.ConfigMap) {
+	if c.replicateEnabled(configMap) {
+		namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			logger.Printf("Error listing namespaces: %v", err)
+			return
+		}
+
+		for _, ns := range namespaces.Items {
+			// Create a new ConfigMap in each namespace
+			newConfigMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      configMap.Name,
+					Namespace: ns.Name,
+				},
+				Data: configMap.Data,
+			}
+
+			_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
+			if err != nil {
+				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			} else {
+				logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+			}
+		}
+	} else {
+		logger.Printf("Replication is not allowed for ConfigMap %s", configMap.Name)
+	}
+}
+
+func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentConfigMap *v1.ConfigMap, updatedConfigMap *v1.ConfigMap) {
+	if c.replicateEnabled(updatedConfigMap) {
+		namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			logger.Printf("Error listing namespaces: %v", err)
+			return
+		}
+
+		for _, ns := range namespaces.Items {
+			configMap := &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      updatedConfigMap.Name,
+					Namespace: ns.Name,
+				},
+				Data: updatedConfigMap.Data,
+			}
+
+			_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+			if err != nil {
+				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			} else {
+				logger.Printf("Updated ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+			}
+		}
+	} else {
+		logger.Printf("Replication is not allowed for ConfigMap %s", updatedConfigMap.Name)
+	}
+}
+
 func (c *ConfigMapReplicatorController) RunV3() error {
 	resyncPeriod, err := time.ParseDuration("1m")
 	if err != nil {
@@ -182,18 +241,18 @@ func (c *ConfigMapReplicatorController) RunV3() error {
 			AddFunc: func(obj interface{}) {
 				// Replicate the ConfigMap to all namespaces
 				configMap := obj.(*v1.ConfigMap)
-				fmt.Printf("Configmap %s added", configMap.Name)
-				logger.Printf("Configmap %s added", configMap.Name)
+				//fmt.Printf("Configmap %s added", configMap.Name)
+				//logger.Printf("Configmap %s added", configMap.Name)
 				c.replicateConfigMapAcrossNamespaces(configMap)
 			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
+			UpdateFunc: func(currentObj, newObj interface{}) {
 				// Handle ConfigMap updates
 				// ...
-				configMap := oldObj.(*v1.ConfigMap)
-				fmt.Printf("Configmap %s updated", configMap.Name)
-				logger.Printf("Configmap %s updated", configMap.Name)
-				// TODO: Need a real update func
-				c.replicateConfigMapAcrossNamespaces(configMap)
+				currentConfigMap := currentObj.(*v1.ConfigMap)
+				updatedConfigMap := currentObj.(*v1.ConfigMap)
+				//fmt.Printf("Configmap %s updated", configMap.Name)
+				//logger.Printf("Configmap %s updated", configMap.Name)
+				c.updateConfigMapAcrossNamespaces(currentConfigMap, updatedConfigMap)
 			},
 			DeleteFunc: func(obj interface{}) {
 				// Handle ConfigMap deletions
