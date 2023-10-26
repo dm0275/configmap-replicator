@@ -32,7 +32,8 @@ func main() {
 	}
 
 	// Create a ConfigMap controller.
-	controller := NewConfigMapReplicatorController(clientset)
+	reconciliationInterval := "5m"
+	controller := NewConfigMapReplicatorController(clientset, reconciliationInterval)
 
 	// Start the controller.
 	if err = controller.Run(); err != nil {
@@ -42,12 +43,20 @@ func main() {
 
 // ConfigMapReplicatorController is responsible for replicating ConfigMaps.
 type ConfigMapReplicatorController struct {
-	clientset *kubernetes.Clientset
+	clientset              *kubernetes.Clientset
+	reconciliationInterval time.Duration
 }
 
 // NewConfigMapReplicatorController creates a new instance of the ConfigMapReplicatorController.
-func NewConfigMapReplicatorController(clientset *kubernetes.Clientset) *ConfigMapReplicatorController {
-	return &ConfigMapReplicatorController{clientset: clientset}
+func NewConfigMapReplicatorController(clientset *kubernetes.Clientset, reconciliationInterval string) *ConfigMapReplicatorController {
+	interval, err := time.ParseDuration(reconciliationInterval)
+	if err != nil {
+		panic(err)
+	}
+	return &ConfigMapReplicatorController{
+		clientset:              clientset,
+		reconciliationInterval: interval,
+	}
 }
 
 // Run starts the controller and watches for ConfigMap changes.
@@ -75,20 +84,24 @@ func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(configMap *
 		}
 
 		for _, ns := range namespaces.Items {
-			// Create a new ConfigMap in each namespace
-			newConfigMap := &v1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      configMap.Name,
-					Namespace: ns.Name,
-				},
-				Data: configMap.Data,
-			}
-
-			_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
-			if err != nil {
-				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			if configMap.Namespace == ns.Name {
+				continue
 			} else {
-				logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+				// Create a new ConfigMap in each namespace
+				newConfigMap := &v1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      configMap.Name,
+						Namespace: ns.Name,
+					},
+					Data: configMap.Data,
+				}
+
+				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
+				if err != nil {
+					logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+				} else {
+					logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+				}
 			}
 		}
 	} else {
@@ -105,19 +118,23 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 		}
 
 		for _, ns := range namespaces.Items {
-			configMap := &v1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      updatedConfigMap.Name,
-					Namespace: ns.Name,
-				},
-				Data: updatedConfigMap.Data,
-			}
-
-			_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Update(context.TODO(), configMap, metav1.UpdateOptions{})
-			if err != nil {
-				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			if updatedConfigMap.Namespace == ns.Name {
+				continue
 			} else {
-				logger.Printf("Updated ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+				configMap := &v1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      updatedConfigMap.Name,
+						Namespace: ns.Name,
+					},
+					Data: updatedConfigMap.Data,
+				}
+
+				_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+				if err != nil {
+					logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+				} else {
+					logger.Printf("Updated ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+				}
 			}
 		}
 	} else {
@@ -126,11 +143,6 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 }
 
 func (c *ConfigMapReplicatorController) Run() error {
-	resyncPeriod, err := time.ParseDuration("1m")
-	if err != nil {
-		panic(err)
-	}
-
 	_, controller := cache.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func(lo metav1.ListOptions) (runtime.Object, error) {
@@ -141,7 +153,7 @@ func (c *ConfigMapReplicatorController) Run() error {
 			},
 		},
 		&v1.ConfigMap{},
-		resyncPeriod,
+		c.reconciliationInterval,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				// Replicate the ConfigMap to all namespaces
