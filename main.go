@@ -32,7 +32,7 @@ func main() {
 	}
 
 	// Create a ConfigMap controller.
-	reconciliationInterval := "5m"
+	reconciliationInterval := "1m"
 	controller := NewConfigMapReplicatorController(clientset, reconciliationInterval)
 
 	// Start the controller.
@@ -92,6 +92,9 @@ func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(configMap *
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      configMap.Name,
 						Namespace: ns.Name,
+						Annotations: map[string]string{
+							"replicated-from": configMap.Namespace + "_" + configMap.Name,
+						},
 					},
 					Data: configMap.Data,
 				}
@@ -119,12 +122,16 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 
 		for _, ns := range namespaces.Items {
 			if updatedConfigMap.Namespace == ns.Name {
+				logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", updatedConfigMap.Name, updatedConfigMap.Namespace)
 				continue
 			} else {
 				configMap := &v1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      updatedConfigMap.Name,
 						Namespace: ns.Name,
+						Annotations: map[string]string{
+							"replicated-from": updatedConfigMap.Namespace + "_" + updatedConfigMap.Name,
+						},
 					},
 					Data: updatedConfigMap.Data,
 				}
