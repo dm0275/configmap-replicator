@@ -33,7 +33,8 @@ func main() {
 
 	// Create a ConfigMap controller.
 	reconciliationInterval := "1m"
-	controller := NewConfigMapReplicatorController(clientset, reconciliationInterval)
+	excludedNamespaces := []string{"kube-system"}
+	controller := NewConfigMapReplicatorController(clientset, reconciliationInterval, excludedNamespaces)
 
 	// Start the controller.
 	if err = controller.Run(); err != nil {
@@ -44,18 +45,20 @@ func main() {
 // ConfigMapReplicatorController is responsible for replicating ConfigMaps.
 type ConfigMapReplicatorController struct {
 	clientset              *kubernetes.Clientset
-	reconciliationInterval time.Duration
+	reconciliationInterval *time.Duration
+	excludedNamespaces     *[]string
 }
 
 // NewConfigMapReplicatorController creates a new instance of the ConfigMapReplicatorController.
-func NewConfigMapReplicatorController(clientset *kubernetes.Clientset, reconciliationInterval string) *ConfigMapReplicatorController {
+func NewConfigMapReplicatorController(clientset *kubernetes.Clientset, reconciliationInterval string, excludedNamespaces []string) *ConfigMapReplicatorController {
 	interval, err := time.ParseDuration(reconciliationInterval)
 	if err != nil {
 		panic(err)
 	}
 	return &ConfigMapReplicatorController{
 		clientset:              clientset,
-		reconciliationInterval: interval,
+		reconciliationInterval: &interval,
+		excludedNamespaces:     &excludedNamespaces,
 	}
 }
 
@@ -85,6 +88,10 @@ func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(configMap *
 
 		for _, ns := range namespaces.Items {
 			if configMap.Namespace == ns.Name {
+				logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", configMap.Name, configMap.Namespace)
+				continue
+			} else if listContains(*c.excludedNamespaces, ns.Name) {
+				logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
 				continue
 			} else {
 				// Create a new ConfigMap in each namespace
@@ -124,6 +131,9 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 			if updatedConfigMap.Namespace == ns.Name {
 				logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", updatedConfigMap.Name, updatedConfigMap.Namespace)
 				continue
+			} else if listContains(*c.excludedNamespaces, ns.Name) {
+				logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, updatedConfigMap.Name, ns.Name)
+				continue
 			} else {
 				configMap := &v1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
@@ -160,7 +170,7 @@ func (c *ConfigMapReplicatorController) Run() error {
 			},
 		},
 		&v1.ConfigMap{},
-		c.reconciliationInterval,
+		*c.reconciliationInterval,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				// Replicate the ConfigMap to all namespaces
@@ -186,4 +196,13 @@ func (c *ConfigMapReplicatorController) Run() error {
 	controller.Run(wait.NeverStop)
 
 	return nil
+}
+
+func listContains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
