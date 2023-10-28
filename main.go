@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	v1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -177,6 +176,34 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 	}
 }
 
+func (c *ConfigMapReplicatorController) deleteConfigMapAcrossNamespaces(configMap *v1.ConfigMap) {
+	if c.replicateEnabled(configMap) {
+		namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			logger.Printf("Error listing namespaces: %v", err)
+			return
+		}
+
+		for _, ns := range namespaces.Items {
+			if configMap.Namespace == ns.Name {
+				continue
+			}
+
+			if listContains(*c.excludedNamespaces, ns.Name) {
+				logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
+				continue
+			} else {
+				err = c.clientset.CoreV1().ConfigMaps(ns.Name).Delete(context.TODO(), configMap.Name, metav1.DeleteOptions{})
+				if err != nil {
+					logger.Printf("Error deleting ConfigMap in namespace %s: %v", ns.Name, err)
+				} else {
+					logger.Printf("Deleted ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+				}
+			}
+		}
+	}
+}
+
 func (c *ConfigMapReplicatorController) Run() error {
 	_, controller := cache.NewInformer(
 		&cache.ListWatch{
@@ -203,10 +230,8 @@ func (c *ConfigMapReplicatorController) Run() error {
 			},
 			DeleteFunc: func(obj interface{}) {
 				// Handle ConfigMap deletions
-				// ...
 				configMap := obj.(*v1.ConfigMap)
-				fmt.Printf("Configmap %s deleted", configMap.Name)
-				logger.Printf("Configmap %s deleted", configMap.Name)
+				c.deleteConfigMapAcrossNamespaces(configMap)
 			},
 		},
 	)
