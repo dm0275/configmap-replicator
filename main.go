@@ -116,8 +116,6 @@ func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(configMap *
 				}
 			}
 		}
-	} else {
-		logger.Printf("Replication is not allowed for ConfigMap %s", configMap.Name)
 	}
 }
 
@@ -171,8 +169,6 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 				}
 			}
 		}
-	} else {
-		logger.Printf("Replication is not allowed for ConfigMap %s", updatedConfigMap.Name)
 	}
 }
 
