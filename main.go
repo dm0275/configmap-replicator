@@ -10,10 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	_ "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	//"k8s.io/client-go/util/kubeconfig"
-	_ "k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/tools/clientcmd"
 	"log"
 	"strconv"
@@ -153,7 +152,12 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Get(context.TODO(), configMap.Name, metav1.GetOptions{})
 				if err != nil {
 					if k8sErrors.IsNotFound(err) {
-						c.addConfigMapAcrossNamespaces(configMap)
+						_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), configMap, metav1.CreateOptions{})
+						if err != nil {
+							logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+						} else {
+							logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+						}
 						continue
 					} else {
 						logger.Printf("Error fetching ConfigMap %s in namespace %s", configMap.Name, ns.Name)
