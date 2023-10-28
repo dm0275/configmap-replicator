@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	v1 "k8s.io/api/core/v1"
+	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -11,6 +12,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	//"k8s.io/client-go/util/kubeconfig"
+	_ "k8s.io/client-go/kubernetes"
+	_ "k8s.io/client-go/tools/clientcmd"
 	"log"
 	"strconv"
 	"time"
@@ -146,7 +150,17 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentC
 					Data: updatedConfigMap.Data,
 				}
 
-				_, err := c.clientset.CoreV1().ConfigMaps(ns.Name).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Get(context.TODO(), configMap.Name, metav1.GetOptions{})
+				if err != nil {
+					if k8sErrors.IsNotFound(err) {
+						c.addConfigMapAcrossNamespaces(configMap)
+						continue
+					} else {
+						logger.Printf("Error fetching ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+					}
+				}
+
+				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Update(context.TODO(), configMap, metav1.UpdateOptions{})
 				if err != nil {
 					logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
 				} else {
