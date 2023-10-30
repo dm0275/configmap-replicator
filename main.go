@@ -36,7 +36,11 @@ func main() {
 	// Create a ConfigMap controller.
 	reconciliationInterval := "1m"
 	excludedNamespaces := []string{"kube-system"}
-	controller := NewConfigMapReplicatorController(clientset, reconciliationInterval, excludedNamespaces)
+	allowedNamespaces := []string{}
+	controller := NewConfigMapReplicatorController(clientset, reconciliationInterval, excludedNamespaces, allowedNamespaces)
+
+	// Validate Controller configuration
+	controller.configureNamespaces()
 
 	// Start the controller.
 	if err = controller.Run(); err != nil {
@@ -49,10 +53,17 @@ type ConfigMapReplicatorController struct {
 	clientset              *kubernetes.Clientset
 	reconciliationInterval *time.Duration
 	excludedNamespaces     *[]string
+	allowedNamespaces      *[]string
+}
+
+func (c *ConfigMapReplicatorController) configureNamespaces() {
+	if slicesOverlap(*c.allowedNamespaces, *c.excludedNamespaces) {
+		logger.Fatalf("ERROR: Cannot have overlaps between allowedNamespaces and excludedNamespaces")
+	}
 }
 
 // NewConfigMapReplicatorController creates a new instance of the ConfigMapReplicatorController.
-func NewConfigMapReplicatorController(clientset *kubernetes.Clientset, reconciliationInterval string, excludedNamespaces []string) *ConfigMapReplicatorController {
+func NewConfigMapReplicatorController(clientset *kubernetes.Clientset, reconciliationInterval string, excludedNamespaces, allowedNamespaces []string) *ConfigMapReplicatorController {
 	interval, err := time.ParseDuration(reconciliationInterval)
 	if err != nil {
 		panic(err)
@@ -61,6 +72,7 @@ func NewConfigMapReplicatorController(clientset *kubernetes.Clientset, reconcili
 		clientset:              clientset,
 		reconciliationInterval: &interval,
 		excludedNamespaces:     &excludedNamespaces,
+		allowedNamespaces:      &allowedNamespaces,
 	}
 }
 
@@ -82,90 +94,113 @@ func (c *ConfigMapReplicatorController) replicateEnabled(configMap *v1.ConfigMap
 // Replicate the given ConfigMap to all namespaces
 func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(configMap *v1.ConfigMap) {
 	if c.replicateEnabled(configMap) {
-		namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			logger.Printf("Error listing namespaces: %v", err)
-			return
-		}
+		if len(*c.allowedNamespaces) > 0 {
+			for _, ns := range *c.allowedNamespaces {
+				// Create a new ConfigMap
+				c.createConfigMap(configMap, ns)
+			}
+		} else {
+			namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+			if err != nil {
+				logger.Printf("Error listing namespaces: %v", err)
+				return
+			}
 
-		for _, ns := range namespaces.Items {
-			if configMap.Namespace == ns.Name {
-				logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", configMap.Name, configMap.Namespace)
-				continue
-			} else if listContains(*c.excludedNamespaces, ns.Name) {
-				logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
-				continue
-			} else {
-				// Create a new ConfigMap in each namespace
-				newConfigMap := &v1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      configMap.Name,
-						Namespace: ns.Name,
-						Annotations: map[string]string{
-							"replicated-from": configMap.Namespace + "_" + configMap.Name,
-						},
-					},
-					Data: configMap.Data,
-				}
-
-				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
-				if err != nil {
-					logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			for _, ns := range namespaces.Items {
+				if configMap.Namespace == ns.Name {
+					logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", configMap.Name, configMap.Namespace)
+					continue
+				} else if listContains(*c.excludedNamespaces, ns.Name) {
+					logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
+					continue
 				} else {
-					logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
+					// Create a new ConfigMap in each namespace
+					c.createConfigMap(configMap, ns.Name)
 				}
 			}
 		}
 	}
 }
 
-func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentConfigMap *v1.ConfigMap, updatedConfigMap *v1.ConfigMap) {
-	if c.replicateEnabled(updatedConfigMap) {
-		namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			logger.Printf("Error listing namespaces: %v", err)
+func (c *ConfigMapReplicatorController) createConfigMap(configMap *v1.ConfigMap, ns string) {
+	// Create a new ConfigMap in each namespace
+	newConfigMap := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMap.Name,
+			Namespace: ns,
+			Annotations: map[string]string{
+				"replicated-from": configMap.Namespace + "_" + configMap.Name,
+			},
+		},
+		Data: configMap.Data,
+	}
+
+	_, err := c.clientset.CoreV1().ConfigMaps(ns).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
+	if err != nil {
+		logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns, err)
+	} else {
+		logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns)
+	}
+}
+
+func (c *ConfigMapReplicatorController) updateConfigMap(configMap *v1.ConfigMap, ns string) {
+	updatedConfigMap := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMap.Name,
+			Namespace: ns,
+			Annotations: map[string]string{
+				"replicated-from": configMap.Namespace + "_" + configMap.Name,
+			},
+		},
+		Data: configMap.Data,
+	}
+
+	_, err := c.clientset.CoreV1().ConfigMaps(ns).Get(context.TODO(), updatedConfigMap.Name, metav1.GetOptions{})
+	if err != nil {
+		if k8sErrors.IsNotFound(err) {
+			_, err = c.clientset.CoreV1().ConfigMaps(ns).Create(context.TODO(), updatedConfigMap, metav1.CreateOptions{})
+			if err != nil {
+				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns, err)
+			} else {
+				logger.Printf("Replicated ConfigMap %s to namespace %s", updatedConfigMap.Name, ns)
+			}
+			return
+		} else {
+			logger.Printf("Error fetching ConfigMap %s in namespace %s", updatedConfigMap.Name, ns)
 			return
 		}
+	}
 
-		for _, ns := range namespaces.Items {
-			if updatedConfigMap.Namespace == ns.Name {
-				logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", updatedConfigMap.Name, updatedConfigMap.Namespace)
-				continue
-			} else if listContains(*c.excludedNamespaces, ns.Name) {
-				logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, updatedConfigMap.Name, ns.Name)
-				continue
-			} else {
-				configMap := &v1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      updatedConfigMap.Name,
-						Namespace: ns.Name,
-						Annotations: map[string]string{
-							"replicated-from": updatedConfigMap.Namespace + "_" + updatedConfigMap.Name,
-						},
-					},
-					Data: updatedConfigMap.Data,
-				}
+	_, err = c.clientset.CoreV1().ConfigMaps(ns).Update(context.TODO(), updatedConfigMap, metav1.UpdateOptions{})
+	if err != nil {
+		logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns, err)
+	} else {
+		logger.Printf("Updated ConfigMap %s in namespace %s", updatedConfigMap.Name, ns)
+	}
+}
 
-				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Get(context.TODO(), configMap.Name, metav1.GetOptions{})
-				if err != nil {
-					if k8sErrors.IsNotFound(err) {
-						_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Create(context.TODO(), configMap, metav1.CreateOptions{})
-						if err != nil {
-							logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
-						} else {
-							logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns.Name)
-						}
-						continue
-					} else {
-						logger.Printf("Error fetching ConfigMap %s in namespace %s", configMap.Name, ns.Name)
-					}
-				}
+func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(currentConfigMap *v1.ConfigMap, updatedConfigMap *v1.ConfigMap) {
+	if c.replicateEnabled(updatedConfigMap) {
+		if len(*c.allowedNamespaces) > 0 {
+			for _, ns := range *c.allowedNamespaces {
+				c.updateConfigMap(updatedConfigMap, ns)
+			}
+		} else {
+			namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+			if err != nil {
+				logger.Printf("Error listing namespaces: %v", err)
+				return
+			}
 
-				_, err = c.clientset.CoreV1().ConfigMaps(ns.Name).Update(context.TODO(), configMap, metav1.UpdateOptions{})
-				if err != nil {
-					logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns.Name, err)
+			for _, ns := range namespaces.Items {
+				if updatedConfigMap.Namespace == ns.Name {
+					logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", updatedConfigMap.Name, updatedConfigMap.Namespace)
+					continue
+				} else if listContains(*c.excludedNamespaces, ns.Name) {
+					logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, updatedConfigMap.Name, ns.Name)
+					continue
 				} else {
-					logger.Printf("Updated ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+					c.updateConfigMap(updatedConfigMap, ns.Name)
 				}
 			}
 		}
@@ -243,5 +278,25 @@ func listContains(s []string, e string) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// Check if two slices have overlapping elements
+func slicesOverlap(slice1, slice2 []string) bool {
+	// Create a map to store elements from slice1
+	seen := make(map[string]bool)
+
+	// Populate the map with elements from slice1
+	for _, elem := range slice1 {
+		seen[elem] = true
+	}
+
+	// Check if any element from slice2 exists in the map
+	for _, elem := range slice2 {
+		if seen[elem] {
+			return true
+		}
+	}
+
 	return false
 }
