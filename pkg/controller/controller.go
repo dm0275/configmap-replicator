@@ -80,7 +80,7 @@ func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(ctx context
 		if len(*c.AllowedNamespaces) > 0 {
 			for _, ns := range *c.AllowedNamespaces {
 				// Create a new ConfigMap
-				c.createConfigMap(ctx, configMap, ns)
+				go c.createConfigMap(ctx, configMap, ns)
 			}
 		} else {
 			namespaces, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
@@ -98,7 +98,7 @@ func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(ctx context
 					continue
 				} else {
 					// Create a new ConfigMap in each namespace
-					c.createConfigMap(ctx, configMap, ns.Name)
+					go c.createConfigMap(ctx, configMap, ns.Name)
 				}
 			}
 		}
@@ -167,7 +167,7 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(ctx cont
 		if len(*c.AllowedNamespaces) > 0 {
 			for _, ns := range *c.AllowedNamespaces {
 				// Update ConfigMap
-				c.updateConfigMap(ctx, updatedConfigMap, ns)
+				go c.updateConfigMap(ctx, updatedConfigMap, ns)
 			}
 		} else {
 			namespaces, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
@@ -185,7 +185,7 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(ctx cont
 					continue
 				} else {
 					// Update ConfigMap
-					c.updateConfigMap(ctx, updatedConfigMap, ns.Name)
+					go c.updateConfigMap(ctx, updatedConfigMap, ns.Name)
 				}
 			}
 		}
