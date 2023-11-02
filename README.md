@@ -1,1 +1,2 @@
 # ConfigMap Replicator Controller
+## Requirements
