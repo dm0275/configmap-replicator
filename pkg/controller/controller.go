@@ -221,17 +221,24 @@ func (c *ConfigMapReplicatorController) deleteConfigMapAcrossNamespaces(ctx cont
 }
 
 func (c *ConfigMapReplicatorController) Run(ctx context.Context) error {
+	// The informer is used to watch and react to changes in resources, in this case ConfigMaps.
 	_, controller := cache.NewInformer(
+		// The first arg is a `cache.ListWatch` object. This object specifies how to list and watch for changes in the ConfigMaps.
 		&cache.ListWatch{
+			// The `ListFunc` is responsible for listing the ConfigMaps
 			ListFunc: func(lo metav1.ListOptions) (runtime.Object, error) {
 				return c.clientset.CoreV1().ConfigMaps("").List(ctx, lo)
 			},
+			// The `WatchFunc` is responsible for setting up a watch on the ConfigMaps. It returns a watch.Interface that will notify the controller of any changes to the watched resources.
 			WatchFunc: func(lo metav1.ListOptions) (watch.Interface, error) {
 				return c.clientset.CoreV1().ConfigMaps("").Watch(ctx, lo)
 			},
 		},
+		// The second arg is the type of the resource we are watching. In this case, a ConfigMap.
 		&v1.ConfigMap{},
+		// The third arg is the resync period(time.Duration), this specifies how often the informer should perform a full re-list of the resources, even if no changes have occurred. This helps ensure that your controller has up-to-date information.
 		*c.ReconciliationInterval,
+		// The fourth arg is a set of event handler functions. These functions define what happens when resources are added, updated, or deleted.
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				// Replicate the ConfigMap to all namespaces
@@ -252,6 +259,7 @@ func (c *ConfigMapReplicatorController) Run(ctx context.Context) error {
 		},
 	)
 
+	// Start the controller and make it run indefinitely to continuously monitor resources as changes occur in the cluster.
 	controller.Run(wait.NeverStop)
 
 	return nil
