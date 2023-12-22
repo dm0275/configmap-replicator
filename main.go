@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	configMapcontroller "github.com/dm0275/configmap-replicator-operator/pkg/controller"
+	configMapcontroller "github.com/dm0275/configmap-replicator/pkg/controller"
 	_ "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	_ "k8s.io/client-go/tools/clientcmd"
