@@ -1,0 +1,1 @@
+The ConfigMap Replicator has been successfully deployed. The replicator will now automatically synchronize (enabled) ConfigMaps across namespaces.
