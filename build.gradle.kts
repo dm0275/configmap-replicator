@@ -7,13 +7,13 @@
 
 plugins {
     id("base")
-    id("com.fussionlabs.gradle.go-plugin") version("0.5.0")
+    id("com.fussionlabs.gradle.go-plugin") version("0.5.2")
 }
 
 version = "1.0.0"
 
-val operatorName = "configmap-replicator-operator"
-val imageRepository = "dm0275/configmap-replicator-operator"
+val operatorName = "configmap-replicator"
+val imageRepository = "dm0275/configmap-replicator"
 
 go {
     os = listOf("linux")
