@@ -7,6 +7,7 @@
 
 plugins {
     id("base")
+    id("com.fussionlabs.gradle.go-plugin") version("0.5.0")
 }
 
 version = "1.0.0"
@@ -14,24 +15,16 @@ version = "1.0.0"
 val operatorName = "configmap-replicator-operator"
 val imageRepository = "dm0275/configmap-replicator-operator"
 
-tasks.register("goBuild") {
-    doLast {
-        exec {
-            environment("GOOS", "linux")
-            environment("GOARCH", "amd64")
-            environment("CGO_ENABLED", "0")
-            mkdir(layout.buildDirectory.get())
-            commandLine("go", "build", "-o", "${layout.buildDirectory.get()}/$operatorName", "$projectDir")
-        }
-    }
+go {
+    os = listOf("linux")
+    arch = listOf("amd64")
 }
 
 tasks.register("dockerBuild") {
+    dependsOn(tasks.getByPath("goBuildLinuxAmd64"))
     doLast {
         exec {
             commandLine("docker", "build", "-t", "$imageRepository:$version", projectDir)
         }
     }
 }
-
-tasks.getByName("build").dependsOn("goBuild")
