@@ -15,7 +15,7 @@ spec:
       serviceAccountName: configmap-replicator-controller-sa
       containers:
         - name: configmap-replicator-controller
-          image: dm0275/configmap-replicator-operator:1.0.0
+          image: dm0275/configmap-replicator:1.0.0
           resources:
             requests:
               memory: "64Mi"

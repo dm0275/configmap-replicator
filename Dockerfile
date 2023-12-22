@@ -1,5 +1,5 @@
 FROM alpine
 
-COPY ./build/configmap-replicator-operator-linux-amd64 .
+COPY ./build/configmap-replicator-linux-amd64 configmap-replicator
 
-CMD ./configmap-replicator-operator
+CMD ./configmap-replicator
