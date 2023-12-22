@@ -28,3 +28,10 @@ tasks.register("dockerBuild") {
         }
     }
 }
+
+tasks.register("dockerPublish") {
+    dependsOn(tasks.getByPath("dockerBuild"))
+    doLast {
+        // TODO
+    }
+}
