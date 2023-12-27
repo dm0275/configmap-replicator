@@ -1,5 +1,7 @@
 package utils
 
+import "os"
+
 func ListContains(s []string, e string) bool {
 	for _, a := range s {
 		if a == e {
@@ -27,4 +29,12 @@ func SlicesOverlap(slice1, slice2 []string) bool {
 	}
 
 	return false
+}
+
+func GetEnv(envVar, defaultVal string) string {
+	environmentVar, exists := os.LookupEnv(envVar)
+	if !exists {
+		return defaultVal
+	}
+	return environmentVar
 }

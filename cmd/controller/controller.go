@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	configMapcontroller "github.com/dm0275/configmap-replicator/pkg/controller"
+	"github.com/dm0275/configmap-replicator/utils"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -36,5 +37,7 @@ func Run(config *rest.Config) {
 }
 
 func configureFlags(cmd *cobra.Command, config *ControllerConfig) {
-	cmd.Flags().StringVarP(&config.ReconciliationInterval, "reconciliation-interval", "", "1m", "configures the reconciliation interval of the controller")
+	reconciliationInterval := utils.GetEnv("REPLICATOR_INTERVAL", "1m")
+
+	cmd.Flags().StringVarP(&config.ReconciliationInterval, "reconciliation-interval", "", reconciliationInterval, "configures the reconciliation interval of the controller")
 }
