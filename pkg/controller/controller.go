@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"github.com/dm0275/configmap-replicator/utils"
 	v1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -12,89 +13,82 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"log"
+	"k8s.io/klog/v2"
 	"strconv"
+	"strings"
 	"time"
 )
 
-var logger = log.Default()
+var (
+	annotationKey         = "configmap-replicator"
+	replicatedFromKey     = "replicated-from"
+	replicationAllowedKey = "replication-allowed"
+	allowedNamespacesKey  = "allowed-namespaces"
+	excludedNamespacesKey = "excluded-namespaces"
+)
 
 // ConfigMapReplicatorController is responsible for replicating ConfigMaps.
 type ConfigMapReplicatorController struct {
 	clientset              *kubernetes.Clientset
 	ReconciliationInterval *time.Duration
-	ExcludedNamespaces     *[]string
-	AllowedNamespaces      *[]string
 }
 
 // NewConfigMapReplicatorController creates a new instance of the ConfigMapReplicatorController.
-func NewConfigMapReplicatorController(config *rest.Config, reconciliationInterval string, excludedNamespaces, allowedNamespaces []string) *ConfigMapReplicatorController {
+func NewConfigMapReplicatorController(config *rest.Config, reconciliationInterval string) *ConfigMapReplicatorController {
 	interval, err := time.ParseDuration(reconciliationInterval)
 	if err != nil {
-		logger.Fatalf("Invalid reconciliation interval %s: %v\n", reconciliationInterval, err)
+		klog.Fatalf("Invalid reconciliation interval %s: %v\n", reconciliationInterval, err)
 	}
 
 	// Create a Kubernetes clientset.
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		logger.Fatalf("Error creating Kubernetes clientset: %v\n", err)
+		klog.Fatalf("Error creating Kubernetes clientset: %v\n", err)
 	}
 
 	controller := &ConfigMapReplicatorController{
 		clientset:              clientset,
 		ReconciliationInterval: &interval,
-		ExcludedNamespaces:     &excludedNamespaces,
-		AllowedNamespaces:      &allowedNamespaces,
 	}
-
-	// Validate Controller configuration
-	controller.configureNamespaces()
 
 	return controller
 }
 
-func (c *ConfigMapReplicatorController) configureNamespaces() {
-	if utils.SlicesOverlap(*c.AllowedNamespaces, *c.ExcludedNamespaces) {
-		logger.Fatalf("ERROR: Cannot have overlaps between allowedNamespaces and excludedNamespaces")
-	}
-}
+func (c *ConfigMapReplicatorController) validateConfiguration(configMap *v1.ConfigMap) {
+	allowedNamespaces := c.getAllowedNamespaces(configMap)
+	excludedNamespaces := c.getExcludedNamespaces(configMap)
 
-// Run starts the controller and watches for ConfigMap changes.
-func (c *ConfigMapReplicatorController) replicateEnabled(configMap *v1.ConfigMap) bool {
-	replicationAllowed, ok := configMap.Annotations["replication-allowed"]
-	if !ok {
-		return false
+	if utils.SlicesOverlap(allowedNamespaces, excludedNamespaces) {
+		klog.Errorf("ERROR: Unable to replicate ConfigMap %s, cannot have overlaps between allowedNamespaces and excludedNamespaces", configMap.Name)
 	}
-
-	replicationAllowedBool, err := strconv.ParseBool(replicationAllowed)
-	if err != nil {
-		return false
-	}
-
-	return replicationAllowedBool
 }
 
 // Replicate the given ConfigMap to all namespaces
 func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(ctx context.Context, configMap *v1.ConfigMap) {
+	// Validate configmap configuration
+	c.validateConfiguration(configMap)
+
 	if c.replicateEnabled(configMap) {
-		if len(*c.AllowedNamespaces) > 0 {
-			for _, ns := range *c.AllowedNamespaces {
+		allowedNamespaces := c.getAllowedNamespaces(configMap)
+		if len(allowedNamespaces) > 0 {
+			for _, ns := range allowedNamespaces {
 				// Create a new ConfigMap
 				go c.createConfigMap(ctx, configMap, ns)
 			}
 		} else {
 			namespaces, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 			if err != nil {
-				logger.Printf("Error listing namespaces: %v", err)
+				klog.Errorf("Error listing namespaces: %v", err)
 				return
 			}
 
 			for _, ns := range namespaces.Items {
+				excludedNamespaces := c.getExcludedNamespaces(configMap)
 				if configMap.Namespace == ns.Name {
-					logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", configMap.Name, configMap.Namespace)
+					klog.Infof("ConfigMap %s in the %s namespace is a source ConfigMap", configMap.Name, configMap.Namespace)
 					continue
-				} else if utils.ListContains(*c.ExcludedNamespaces, ns.Name) {
-					logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
+				} else if utils.ListContains(excludedNamespaces, ns.Name) {
+					klog.Infof("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
 					continue
 				} else {
 					// Create a new ConfigMap in each namespace
@@ -112,7 +106,7 @@ func (c *ConfigMapReplicatorController) createConfigMap(ctx context.Context, con
 			Name:      configMap.Name,
 			Namespace: ns,
 			Annotations: map[string]string{
-				"replicated-from": configMap.Namespace + "_" + configMap.Name,
+				fmt.Sprintf("%s/%s", annotationKey, replicatedFromKey): configMap.Namespace + "_" + configMap.Name,
 			},
 		},
 		Data: configMap.Data,
@@ -120,9 +114,9 @@ func (c *ConfigMapReplicatorController) createConfigMap(ctx context.Context, con
 
 	_, err := c.clientset.CoreV1().ConfigMaps(ns).Create(ctx, newConfigMap, metav1.CreateOptions{})
 	if err != nil {
-		logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns, err)
+		klog.Errorf("Error replicating ConfigMap to namespace %s: %v", ns, err)
 	} else {
-		logger.Printf("Replicated ConfigMap %s to namespace %s", configMap.Name, ns)
+		klog.Infof("Replicated ConfigMap %s to namespace %s", configMap.Name, ns)
 	}
 }
 
@@ -132,7 +126,7 @@ func (c *ConfigMapReplicatorController) updateConfigMap(ctx context.Context, con
 			Name:      configMap.Name,
 			Namespace: ns,
 			Annotations: map[string]string{
-				"replicated-from": configMap.Namespace + "_" + configMap.Name,
+				fmt.Sprintf("%s/%s", annotationKey, replicatedFromKey): configMap.Namespace + "_" + configMap.Name,
 			},
 		},
 		Data: configMap.Data,
@@ -143,45 +137,50 @@ func (c *ConfigMapReplicatorController) updateConfigMap(ctx context.Context, con
 		if k8sErrors.IsNotFound(err) {
 			_, err = c.clientset.CoreV1().ConfigMaps(ns).Create(ctx, updatedConfigMap, metav1.CreateOptions{})
 			if err != nil {
-				logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns, err)
+				klog.Errorf("Error replicating ConfigMap to namespace %s: %v", ns, err)
 			} else {
-				logger.Printf("Replicated ConfigMap %s to namespace %s", updatedConfigMap.Name, ns)
+				klog.Infof("Replicated ConfigMap %s to namespace %s", updatedConfigMap.Name, ns)
 			}
 			return
 		} else {
-			logger.Printf("Error fetching ConfigMap %s in namespace %s", updatedConfigMap.Name, ns)
+			klog.Errorf("Error fetching ConfigMap %s in namespace %s", updatedConfigMap.Name, ns)
 			return
 		}
 	}
 
 	_, err = c.clientset.CoreV1().ConfigMaps(ns).Update(ctx, updatedConfigMap, metav1.UpdateOptions{})
 	if err != nil {
-		logger.Printf("Error replicating ConfigMap to namespace %s: %v", ns, err)
+		klog.Errorf("Error replicating ConfigMap to namespace %s: %v", ns, err)
 	} else {
-		logger.Printf("Updated ConfigMap %s in namespace %s", updatedConfigMap.Name, ns)
+		klog.Infof("Updated ConfigMap %s in namespace %s", updatedConfigMap.Name, ns)
 	}
 }
 
 func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(ctx context.Context, currentConfigMap *v1.ConfigMap, updatedConfigMap *v1.ConfigMap) {
+	// Validate configmap configuration
+	c.validateConfiguration(updatedConfigMap)
+
 	if c.replicateEnabled(updatedConfigMap) {
-		if len(*c.AllowedNamespaces) > 0 {
-			for _, ns := range *c.AllowedNamespaces {
+		allowedNamespaces := c.getAllowedNamespaces(updatedConfigMap)
+		if len(allowedNamespaces) > 0 {
+			for _, ns := range allowedNamespaces {
 				// Update ConfigMap
 				go c.updateConfigMap(ctx, updatedConfigMap, ns)
 			}
 		} else {
 			namespaces, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 			if err != nil {
-				logger.Printf("Error listing namespaces: %v", err)
+				klog.Errorf("Error listing namespaces: %v", err)
 				return
 			}
 
 			for _, ns := range namespaces.Items {
+				excludedNamespaces := c.getExcludedNamespaces(updatedConfigMap)
 				if updatedConfigMap.Namespace == ns.Name {
-					logger.Printf("ConfigMap %s in the %s namespace is a source ConfigMap", updatedConfigMap.Name, updatedConfigMap.Namespace)
+					klog.Infof("ConfigMap %s in the %s namespace is a source ConfigMap", updatedConfigMap.Name, updatedConfigMap.Namespace)
 					continue
-				} else if utils.ListContains(*c.ExcludedNamespaces, ns.Name) {
-					logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, updatedConfigMap.Name, ns.Name)
+				} else if utils.ListContains(excludedNamespaces, ns.Name) {
+					klog.Infof("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, updatedConfigMap.Name, ns.Name)
 					continue
 				} else {
 					// Update ConfigMap
@@ -193,10 +192,13 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(ctx cont
 }
 
 func (c *ConfigMapReplicatorController) deleteConfigMapAcrossNamespaces(ctx context.Context, configMap *v1.ConfigMap) {
+	// Validate configmap configuration
+	c.validateConfiguration(configMap)
+
 	if c.replicateEnabled(configMap) {
 		namespaces, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 		if err != nil {
-			logger.Printf("Error listing namespaces: %v", err)
+			klog.Errorf("Error listing namespaces: %v", err)
 			return
 		}
 
@@ -205,21 +207,23 @@ func (c *ConfigMapReplicatorController) deleteConfigMapAcrossNamespaces(ctx cont
 				continue
 			}
 
-			if utils.ListContains(*c.ExcludedNamespaces, ns.Name) {
-				logger.Printf("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
+			excludedNamespaces := c.getExcludedNamespaces(configMap)
+			if utils.ListContains(excludedNamespaces, ns.Name) {
+				klog.Infof("Namespace %s is an excluded Namespace. Not replicating ConfigMap %s to Namespace %s.", ns.Name, configMap.Name, ns.Name)
 				continue
 			} else {
 				err = c.clientset.CoreV1().ConfigMaps(ns.Name).Delete(ctx, configMap.Name, metav1.DeleteOptions{})
 				if err != nil {
-					logger.Printf("Error deleting ConfigMap in namespace %s: %v", ns.Name, err)
+					klog.Errorf("Error deleting ConfigMap in namespace %s: %v", ns.Name, err)
 				} else {
-					logger.Printf("Deleted ConfigMap %s in namespace %s", configMap.Name, ns.Name)
+					klog.Infof("Deleted ConfigMap %s in namespace %s", configMap.Name, ns.Name)
 				}
 			}
 		}
 	}
 }
 
+// Run starts the controller and watches for ConfigMap changes.
 func (c *ConfigMapReplicatorController) Run(ctx context.Context) error {
 	// The informer is used to watch and react to changes in resources, in this case ConfigMaps.
 	_, controller := cache.NewInformer(
@@ -263,4 +267,36 @@ func (c *ConfigMapReplicatorController) Run(ctx context.Context) error {
 	controller.Run(wait.NeverStop)
 
 	return nil
+}
+
+func (c *ConfigMapReplicatorController) replicateEnabled(configMap *v1.ConfigMap) bool {
+	replicationAllowed, ok := configMap.Annotations[fmt.Sprintf("%s/%s", annotationKey, replicationAllowedKey)]
+	if !ok {
+		return false
+	}
+
+	replicationAllowedBool, err := strconv.ParseBool(replicationAllowed)
+	if err != nil {
+		return false
+	}
+
+	return replicationAllowedBool
+}
+
+func (c *ConfigMapReplicatorController) getAllowedNamespaces(configMap *v1.ConfigMap) []string {
+	allowedNamespaces, ok := configMap.Annotations[fmt.Sprintf("%s/%s", annotationKey, allowedNamespacesKey)]
+	if !ok {
+		return []string{}
+	}
+
+	return strings.Split(allowedNamespaces, ",")
+}
+
+func (c *ConfigMapReplicatorController) getExcludedNamespaces(configMap *v1.ConfigMap) []string {
+	excludedNamespaces, ok := configMap.Annotations[fmt.Sprintf("%s/%s", annotationKey, excludedNamespacesKey)]
+	if !ok {
+		return []string{}
+	}
+
+	return strings.Split(excludedNamespaces, ",")
 }

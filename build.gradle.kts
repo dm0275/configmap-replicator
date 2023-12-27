@@ -33,7 +33,7 @@ docker {
 }
 
 tasks.register("dockerBuildImage", DockerBuildImage::class) {
-    dependsOn(tasks.getByName("goBuildLinuxAmd64"))
+    dependsOn("build")
     inputDir.set(rootDir)
     images.addAll(imageTags)
 }
