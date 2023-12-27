@@ -277,6 +277,8 @@ func (c *ConfigMapReplicatorController) Run(ctx context.Context) error {
 		},
 	)
 
+	klog.Infof("Starting configmap-replicator controller with a %s reconciliation interval", c.ReconciliationInterval)
+
 	// Start the controller and make it run indefinitely to continuously monitor resources as changes occur in the cluster.
 	controller.Run(wait.NeverStop)
 
