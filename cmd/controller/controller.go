@@ -10,8 +10,6 @@ import (
 
 type ControllerConfig struct {
 	ReconciliationInterval string
-	ExcludedNamespaces     []string
-	AllowedNamespaces      []string
 }
 
 func Run(config *rest.Config) {
@@ -39,6 +37,4 @@ func Run(config *rest.Config) {
 
 func configureFlags(cmd *cobra.Command, config *ControllerConfig) {
 	cmd.Flags().StringVarP(&config.ReconciliationInterval, "reconciliation-interval", "", "1m", "configures the reconciliation interval of the controller")
-	cmd.Flags().StringSliceVar(&config.ExcludedNamespaces, "excluded-namespaces", []string{"kube-system"}, "namespaces excluded from replication")
-	cmd.Flags().StringSliceVar(&config.AllowedNamespaces, "allowed-namespaces", []string{}, "configures exclusive namespaces allowed for replication")
 }
