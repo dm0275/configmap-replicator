@@ -54,19 +54,25 @@ func NewConfigMapReplicatorController(config *rest.Config, reconciliationInterva
 	return controller
 }
 
-func (c *ConfigMapReplicatorController) validateConfiguration(configMap *v1.ConfigMap) {
+func (c *ConfigMapReplicatorController) validateConfiguration(configMap *v1.ConfigMap) error {
 	allowedNamespaces := c.getAllowedNamespaces(configMap)
 	excludedNamespaces := c.getExcludedNamespaces(configMap)
 
 	if utils.SlicesOverlap(allowedNamespaces, excludedNamespaces) {
-		klog.Errorf("ERROR: Unable to replicate ConfigMap %s, cannot have overlaps between allowedNamespaces and excludedNamespaces", configMap.Name)
+		return fmt.Errorf("ERROR: Unable to replicate ConfigMap %s, cannot have overlaps between allowedNamespaces and excludedNamespaces", configMap.Name)
 	}
+
+	return nil
 }
 
 // Replicate the given ConfigMap to all namespaces
 func (c *ConfigMapReplicatorController) addConfigMapAcrossNamespaces(ctx context.Context, configMap *v1.ConfigMap) {
 	// Validate configmap configuration
-	c.validateConfiguration(configMap)
+	err := c.validateConfiguration(configMap)
+	if err != nil {
+		klog.Errorf(err.Error())
+		return
+	}
 
 	if c.replicateEnabled(configMap) {
 		allowedNamespaces := c.getAllowedNamespaces(configMap)
@@ -158,7 +164,11 @@ func (c *ConfigMapReplicatorController) updateConfigMap(ctx context.Context, con
 
 func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(ctx context.Context, currentConfigMap *v1.ConfigMap, updatedConfigMap *v1.ConfigMap) {
 	// Validate configmap configuration
-	c.validateConfiguration(updatedConfigMap)
+	err := c.validateConfiguration(updatedConfigMap)
+	if err != nil {
+		klog.Errorf(err.Error())
+		return
+	}
 
 	if c.replicateEnabled(updatedConfigMap) {
 		allowedNamespaces := c.getAllowedNamespaces(updatedConfigMap)
@@ -193,7 +203,11 @@ func (c *ConfigMapReplicatorController) updateConfigMapAcrossNamespaces(ctx cont
 
 func (c *ConfigMapReplicatorController) deleteConfigMapAcrossNamespaces(ctx context.Context, configMap *v1.ConfigMap) {
 	// Validate configmap configuration
-	c.validateConfiguration(configMap)
+	err := c.validateConfiguration(configMap)
+	if err != nil {
+		klog.Errorf(err.Error())
+		return
+	}
 
 	if c.replicateEnabled(configMap) {
 		namespaces, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
