@@ -10,8 +10,8 @@ import com.bmuschko.gradle.docker.tasks.image.DockerPushImage
 
 plugins {
     id("base")
-    id("com.fussionlabs.gradle.go-plugin") version("0.5.2")
-    id("com.bmuschko.docker-remote-api") version "9.4.0"
+    id("com.fussionlabs.gradle.go-plugin") version("0.5.3")
+    id("com.bmuschko.docker-remote-api") version("9.4.0")
 }
 
 version = "1.0.0"
