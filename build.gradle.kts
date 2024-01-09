@@ -11,7 +11,7 @@ import com.fussionlabs.gradle.tasks.GoTask
 
 plugins {
     id("base")
-    id("com.fussionlabs.gradle.go-plugin") version("0.6.0")
+    id("com.fussionlabs.gradle.go-plugin") version("0.6.1")
     id("com.bmuschko.docker-remote-api") version("9.4.0")
 }
 
