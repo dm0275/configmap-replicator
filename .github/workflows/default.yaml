@@ -27,6 +27,6 @@ jobs:
 
       # Build the plugin
       - name: Build
-        run: ./gradlew dockerBuildImage
+        run: ./gradlew dockerBuildImage --stacktrace
 
   
