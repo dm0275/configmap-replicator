@@ -3,6 +3,16 @@ entries:
   configmap-replicator:
   - apiVersion: v2
     appVersion: 1.0.0
+    created: "2024-09-02T20:57:55.072978474Z"
+    description: A Helm chart for Kubernetes
+    digest: dee5b63359e8b41920ca5e92db38477d6ebb07194a71c11c20936945d53151fe
+    name: configmap-replicator
+    type: application
+    urls:
+    - https://github.com/dm0275/configmap-replicator/releases/download/configmap-replicator-1.0.3/configmap-replicator-1.0.3.tgz
+    version: 1.0.3
+  - apiVersion: v2
+    appVersion: 1.0.0
     created: "2024-09-02T20:51:30.997389165Z"
     description: A Helm chart for Kubernetes
     digest: d033104124cef394dad00b466cec083a0b90f371640b9a3acfc09a53be172b5e
@@ -11,4 +21,4 @@ entries:
     urls:
     - https://github.com/dm0275/configmap-replicator/releases/download/configmap-replicator-1.0.2/configmap-replicator-1.0.2.tgz
     version: 1.0.2
-generated: "2024-09-02T20:51:30.997395647Z"
+generated: "2024-09-02T20:57:55.073013891Z"
