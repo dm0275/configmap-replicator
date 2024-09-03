@@ -9,8 +9,51 @@ This controller allows users to easily copy, synchronize, or replicate ConfigMap
 - **Fine-Grained Control**: Specify which namespaces to include or exclude from replication.
 - **Annotation-Based Configuration**: Control replication behavior using simple Kubernetes annotations.
 
+
 ## Installation
-TODO
+The `configmap-replicator` controller can be installed via Helm. To install, add the Helm chart repository:
+
+```bash
+helm repo add cm-repo https://dm0275.github.io/configmap-replicator \
+  && helm repo update
+```
+
+Install the latest version of the controller by running:
+
+```bash
+helm install configmap-replicator cm-repo/configmap-replicator
+```
+
+### Helm Chart Values
+
+Below is a table with the values available in the Helm chart:
+
+| Parameter                           | Description                                                       | Default Value                 |
+|-------------------------------------|-------------------------------------------------------------------|-------------------------------|
+| `replicaCount`                      | Number of replicas for the controller                             | `1`                           |
+| `image.pullPolicy`                  | Image pull policy                                                 | `IfNotPresent`                |
+| `image.tag`                         | Image tag (defaults to chart appVersion)                          | `""`                          |
+| `imagePullSecrets`                  | List of image pull secrets                                        | `[]`                          |
+| `nameOverride`                      | Override name of the chart                                        | `""`                          |
+| `fullnameOverride`                  | Override full name of the chart                                   | `""`                          |
+| `rbac.create`                       | Create RBAC(Role & RoleBinding) configurations for the controller | `true`                        |
+| `rbac.serviceAccount.name`          | Name of the ServiceAccount                                        | `""`                          |
+| `rbac.clusterRole.name`             | Name of the ClusterRole                                           | `""`                          |
+| `rbac.clusterRoleBinding.name`      | Name of the ClusterRoleBinding                                    | `""`                          |
+| `serviceAccount.create`             | Create a new ServiceAccount                                       | `true`                        |
+| `serviceAccount.automount`          | Automount ServiceAccount API credentials                          | `true`                        |
+| `serviceAccount.annotations`        | Annotations for the ServiceAccount                                | `{}`                          |
+| `serviceAccount.name`               | ServiceAccount name                                               | `""`                          |
+| `podAnnotations`                    | Annotations for the pod                                           | `{}`                          |
+| `podLabels`                         | Labels for the pod                                                | `{}`                          |
+| `resources.limits.cpu`              | CPU limit for the container                                       | `1`                           |
+| `resources.limits.memory`           | Memory limit for the container                                    | `128Mi`                       |
+| `resources.requests.cpu`            | CPU request for the container                                     | `100m`                        |
+| `resources.requests.memory`         | Memory request for the container                                  | `128Mi`                       |
+| `nodeSelector`                      | Node selector for pod scheduling                                  | `{}`                          |
+| `tolerations`                       | Tolerations for pod scheduling                                    | `[]`                          |
+| `affinity`                          | Affinity rules for pod scheduling                                 | `{}`                          |
+| `replicator.reconciliationInterval` | Interval for ConfigMap reconciliation                             | `1m`                          |
 
 ## Usage
 
